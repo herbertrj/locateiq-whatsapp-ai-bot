@@ -1,58 +1,60 @@
-# Chatbot de atendimento no WhatsApp com RAG (LocateIQ)
+# Chatbot de atendimento no WhatsApp com RAG
 
-Olá. Sou o Herbert, trabalho como CEO na **LocateIQ** e montei este projeto em paralelo ao dia a dia da empresa. A ideia foi dupla: resolver um problema real de **atendimento no WhatsApp** quando o volume sobe, e forçar-me a **aprender na prática** um conjunto de ferramentas que eu só tinha lido em tutorial — Docker a sério, LangChain, vector database, integração com API de WhatsApp, esse tipo de coisa.
+Este repositório é um **projeto de automação de atendimento**: a ideia é responder quem escreve no **WhatsApp** com ajuda de **IA**, mas puxando respostas de **documentos** (PDF, texto) em vez de deixar o modelo inventar tudo. Usei **RAG**, **Docker**, **LangChain** e a **Evolution API** para ligar o canal ao backend.
 
-Não é um slide de vendas. É código que eu escrevi, quebrei, voltei a escrever. Se estás a ler isto como recrutador, espero que consigas ver **o problema**, **o que usei**, **porquê** e **como podes validar** que isto até funciona.
+Sou **estudante**, gosto de tecnologia e fiz isto para **aprender na prática** — infraestrutura, integrações, vector store — além do que aparece só na teoria.
+
+Não é apresentação comercial: é código que foi escrito, testado e corrigido várias vezes. Se estás a avaliar o repositório, aqui está **que problema ataca**, **o stack**, **porquê** e **como testar**.
 
 ---
 
 ## Que problema isto tenta resolver
 
-Na LocateIQ o WhatsApp é canal importante. Quando entram muitas mensagens ao mesmo tempo, ou de madrugada, **ou respondes tarde e o cliente esfria**, ou metes uma pessoa só a apagar incêndios. Um bot burro que responde “em breve respondemos” não resolve; um modelo que **alucina** preço ou condição do serviço é pior.
+Em **atendimento por WhatsApp** o padrão é repetido: picos de mensagens, horários em que ninguém está disponível, **atraso na resposta** e quem está do outro lado desiste. Respostas fixas do tipo “já vamos responder” pouco ajudam; um modelo que **inventa** dados sobre produto ou serviço é perigoso.
 
-O que eu queria era: **resposta automática** que ainda assim se apoiasse em **documentos que a empresa já tem** (PDF, texto), com **memória da conversa** para não parecer um robô que esquece a frase anterior. Daí o caminho **RAG** (buscar trechos relevantes antes de mandar o texto para o modelo) em vez de confiar só no conhecimento genérico da OpenAI.
+O objetivo deste projeto é **automatizar respostas** com base em **material de apoio indexado** (PDF, texto), mantendo **contexto da conversa**. Daí o **RAG**: antes de gerar texto, o sistema **recupera trechos** relevantes e só depois manda o pedido ao modelo da OpenAI.
 
 ---
 
 ## O fluxo em linguagem humana
 
 1. O cliente manda mensagem no WhatsApp.
-2. A **Evolution API** (que está ligada à nossa instância) dispara um evento e chama o meu **`POST /webhook`** no serviço Python.
+2. A **Evolution API** (instância WhatsApp configurada no painel) dispara um evento e chama o **`POST /webhook`** do serviço Python.
 3. O **FastAPI** recebe o JSON, tira o texto e o identificador do chat.
 4. Entra a **chain do LangChain**: histórico no **Redis**, busca semântica no **Chroma** (feita com embeddings da OpenAI), depois o **modelo de chat** gera a resposta.
 5. O mesmo backend chama de novo a Evolution para **enviar o texto** de volta ao número.
 
-O **Postgres** na stack não é “porque sim”: a imagem da Evolution que uso precisa de base de dados para estado/metadados. O **Redis** serve à API e eu uso também para guardar o histórico das mensagens no LangChain.
+O **Postgres** na stack existe porque a **imagem da Evolution** precisa de base de dados para estado e metadados. O **Redis** serve à Evolution e, no bot, guarda o **histórico de mensagens** do LangChain.
 
 ---
 
 ## Tecnologias que usei e o porquê de cada uma
 
-**Python 3.13** — É a versão que fixei no `Dockerfile`. Queria algo recente mas estável para não brigar com dependências do LangChain sem necessidade.
+**Python 3.13** — Versão definida no `Dockerfile`, equilíbrio entre recursos recentes e compatibilidade com o ecossistema LangChain.
 
-**FastAPI** — Framework leve para expor o webhook. Gosto do facto de ser nativo para async e de gerar documentação OpenAPI; para um endpoint principal mais vale simples do que carregar Framework pesado.
+**FastAPI** — Framework leve para o webhook, com suporte async e documentação OpenAPI gerada automaticamente.
 
-**Uvicorn** — Servidor ASGI que meti no comando do container. É o padrão para correr FastAPI em produção (ou quase-produção).
+**Uvicorn** — Servidor ASGI no `Dockerfile` / comando do container; uso habitual com FastAPI.
 
-**Docker + Docker Compose** — Foi aqui que mais aprendi neste projeto. Queria **um comando** para subir tudo: API Evolution, Postgres, Redis e o meu bot, na **mesma rede**, com **volumes** para não perder instância do WhatsApp, base de dados, ficheiros RAG e pasta do Chroma. Sem isso eu passava a vida a dizer “na minha máquina funciona”.
+**Docker + Docker Compose** — **Um comando** para subir Evolution API, Postgres, Redis e o serviço do bot na **mesma rede**, com **volumes** para instância WhatsApp, base de dados, ficheiros RAG e pasta do Chroma. Assim o ambiente fica **reproduzível** entre máquinas.
 
 **Dockerfile do bot** — Copia `requirements.txt`, instala dependências, copia o código, expõe a porta 8000 e arranca o Uvicorn. Simples de proposito.
 
-**Evolution API (imagem evoapicloud)** — Abstrai a parte chata de estar colado ao protocolo WhatsApp. Eu recebo **HTTP** com JSON e mando **HTTP** para enviar mensagem. Por baixo usa Baileys; eu não tratei disso linha a linha porque o objetivo era outro: **orquestrar IA e dados**.
+**Evolution API (imagem evoapicloud)** — Abstrai a ligação ao protocolo WhatsApp: entra **HTTP** com JSON e sai **HTTP** para enviar mensagem. Por baixo usa Baileys; o foco do projeto é **orquestrar IA, RAG e histórico**, não reimplementar o cliente WhatsApp.
 
 **PostgreSQL 15** — Vem no `docker-compose` porque a Evolution precisa. Ajustei `max_connections` no compose para evitar dor de cabeça quando há muitas ligações.
 
-**Redis** — Cache e outras funções internas da Evolution; no meu código uso **Redis** também via `RedisChatMessageHistory` do LangChain para o histórico por `session_id` (no caso, ligado ao JID do WhatsApp).
+**Redis** — Cache e outras funções internas da Evolution; no bot, **Redis** guarda o histórico via `RedisChatMessageHistory` do LangChain, com `session_id` alinhado ao JID do WhatsApp.
 
-**LangChain** (vários pacotes: `langchain-core`, `langchain-classic`, `langchain-openai`, `langchain-community`, `langchain-chroma`, `langchain-text-splitters`) — Usei porque já traz o padrão **history-aware retriever** + **stuff documents** + **retrieval chain** + **RunnableWithMessageHistory**. Dava para fazer à mão, mas eu queria **aprender a ferramenta que o mercado usa** e não reinventar a roda mal feita.
+**LangChain** (vários pacotes: `langchain-core`, `langchain-classic`, `langchain-openai`, `langchain-community`, `langchain-chroma`, `langchain-text-splitters`) — Agrega o fluxo **history-aware retriever** + **stuff documents** + **retrieval chain** + **RunnableWithMessageHistory**, padrão comum em tutoriais e projetos reais de RAG conversacional.
 
 **OpenAI** — `ChatOpenAI` para a resposta final e `OpenAIEmbeddings` para transformar texto em vetor e pesquisar no Chroma. Uma API só para os dois papéis simplifica contas e chaves.
 
-**Chroma** — Base vectorial em disco (`persist_directory`), integrada ao LangChain. Escolhi por ser **prática para um projeto individual**: não precisei de subir Pinecone ou Weaviate no primeiro dia. Os dados ficam na pasta `vectorstore_data` (montada no container).
+**Chroma** — Base vectorial em disco (`persist_directory`), integrada ao LangChain. É **simples de operar** num projeto desta escala, sem serviço vectorial externo desde o primeiro dia. Os dados ficam em `vectorstore_data` (montada no container).
 
 **PyPDF + loaders do LangChain** — Para ingerir PDF e TXT da pasta `rag_files`. Os ficheiros processados vão para `rag_files/processed` (e essa pasta está no `.gitignore` para não ir lixo para o Git).
 
-**Requests** — No `evolution_api.py` faço o `POST` para o endpoint `sendText` da Evolution com o `apikey` no header. Direto, fácil de debugar com logs.
+**Requests** — No `evolution_api.py`, `POST` ao endpoint `sendText` da Evolution com `apikey` no header; fácil de inspecionar em caso de erro.
 
 **python-dotenv** — Todas as chaves e URLs vêm do ficheiro `.env`. Nunca commitar isso.
 
@@ -166,11 +168,11 @@ Mete PDF ou TXT em `rag_files/` (não dentro de `processed`). Reinicia o bot ou 
 
 ---
 
-## Limitações que eu próprio conheço
+## Limitações conhecidas
 
-O `app.py` actual só trata bem mensagens com campo `conversation`. Áudio, imagem ou texto só em `extendedTextMessage` ainda não estão cobertos; é melhoria que tenho na lista.
+O `app.py` actual só trata bem mensagens com campo `conversation`. Áudio, imagem ou texto só em `extendedTextMessage` ainda não estão cobertos.
 
-Também não filtrei `fromMe` no snippet actual: em cenários estranhos podes ter eco se não tiveres cuidado na configuração do webhook. Fica como aviso honesto.
+Não há filtro `fromMe`: em certas configurações de webhook pode haver eco; convém validar no painel da Evolution.
 
 ---
 
@@ -184,6 +186,6 @@ Também não filtrei `fromMe` no snippet actual: em cenários estranhos podes te
 
 ## Palavra final
 
-Fiz este projeto para **aprender fazendo**: compose, RAG, memória de conversa, integração WhatsApp. Se quiseres falar sobre decisões técnicas ou sobre como eu evoluiria isto para produção com mais gente em cima, estou disponível.
+Projeto focado em **atendimento automatizado** com **RAG** e stack reproduzível em Docker. Foi também exercício de **aprendizagem** (compose, memória de conversa, integração WhatsApp). Dúvidas técnicas sobre o repositório, estou disponível para conversar.
 
-Herbert — LocateIQ
+— Herbert
