@@ -1,4 +1,5 @@
 services:
+
   evolution-api:
     container_name: evolution_api
     image: evoapicloud/evolution-api:latest
@@ -12,33 +13,37 @@ services:
     depends_on:
       - postgres
       - redis
+    networks:
+      - chatbot-network
 
   postgres:
     container_name: postgres
     image: postgres:15
-    restart: always
     command: ["postgres", "-c", "max_connections=1000"]
+    restart: always
     ports:
-      - "5432:5432"
+      - 5432:5432
     environment:
-      POSTGRES_PASSWORD: postgres
+      - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - chatbot-network
 
   redis:
-    container_name: redis
     image: redis:latest
-    restart: always
+    container_name: redis
     command: redis-server --port 6379 --appendonly yes
-    ports:
-      - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis:/data
+    ports:
+      - 6379:6379
+    networks:
+      - chatbot-network
 
   bot:
     build: .
     container_name: bot
-    restart: always
     ports:
       - "8000:8000"
     env_file:
@@ -46,12 +51,20 @@ services:
     depends_on:
       - evolution-api
       - redis
+    restart: always
     volumes:
       - ./vectorstore_data:/app/vectorstore
       - ./rag_files:/app/rag_files
+    networks:
+      - chatbot-network
 
 volumes:
   evolution_instances:
   postgres_data:
-  redis_data:
-  
+  redis:
+  vectorstore_data:
+  rag_files:
+
+networks:
+  chatbot-network:
+    driver: bridge

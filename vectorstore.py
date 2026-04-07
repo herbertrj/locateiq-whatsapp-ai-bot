@@ -1,65 +1,47 @@
 import os
 import shutil
 
-from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
 
-from config import RAG_FILES_DIRS, VECTOR_STORE_PATH
+from config import RAG_FILES_DIR, VECTOR_STORE_PATH
 
 
 def load_documents():
-    """Carrega .txt e .pdf da pasta RAG; move ficheiros processados para processed/."""
-    if not RAG_FILES_DIRS:
-        return []
-
-    os.makedirs(RAG_FILES_DIRS, exist_ok=True)
-    processed_dir = os.path.join(RAG_FILES_DIRS, "processed")
+    docs = []
+    processed_dir = os.path.join(RAG_FILES_DIR, 'processed')
     os.makedirs(processed_dir, exist_ok=True)
 
-    docs = []
-    for name in os.listdir(RAG_FILES_DIRS):
-        if name == "processed":
-            continue
-        path = os.path.join(RAG_FILES_DIRS, name)
-        if not os.path.isfile(path):
-            continue
-        lower = name.lower()
-        if not (lower.endswith(".txt") or lower.endswith(".pdf")):
-            continue
+    files = [
+        os.path.join(RAG_FILES_DIR, f)
+        for f in os.listdir(RAG_FILES_DIR)
+        if f.endswith('.pdf') or f.endswith('.txt')
+    ]
 
-        loader = (
-            PyPDFLoader(path)
-            if lower.endswith(".pdf")
-            else TextLoader(path, encoding="utf-8")
-        )
+    for file in files:
+        loader = PyPDFLoader(file) if file.endswith('.pdf') else TextLoader(file)
         docs.extend(loader.load())
-        shutil.move(path, os.path.join(processed_dir, name))
+        dest_path = os.path.join(processed_dir, os.path.basename(file))
+        shutil.move(file, dest_path)
 
     return docs
 
-
-def get_vector_store():
-    """Se houver documentos novos, indexa; senão reutiliza o Chroma em disco."""
-    if not VECTOR_STORE_PATH:
-        raise ValueError("VECTOR_STORE_PATH não definido")
-
-    os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
-
-    embeddings = OpenAIEmbeddings()
+def get_vectorstore():
     docs = load_documents()
-
     if docs:
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        splits = splitter.split_documents(docs)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+        )
+        splits = text_splitter.split_documents(docs)
         return Chroma.from_documents(
             documents=splits,
-            embedding=embeddings,
+            embedding=OpenAIEmbeddings(),
             persist_directory=VECTOR_STORE_PATH,
         )
-
     return Chroma(
+        embedding_function=OpenAIEmbeddings(),
         persist_directory=VECTOR_STORE_PATH,
-        embedding_function=embeddings,
     )

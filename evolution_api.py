@@ -21,7 +21,7 @@ def _normalize_evolution_number(jid_or_number: str) -> str:
     return s
 
 
-def send_whatapp_message(
+def send_whatsapp_message(
     number: str,
     text: str,
     *,
