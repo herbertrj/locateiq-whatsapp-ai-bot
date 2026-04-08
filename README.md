@@ -2,15 +2,15 @@
 
 Este repositório é um **projeto de automação de atendimento**: a ideia é responder quem escreve no **WhatsApp** com ajuda de **IA**, mas puxando respostas de **documentos** (PDF, texto) em vez de deixar o modelo inventar tudo. Usei **RAG**, **Docker**, **LangChain** e a **Evolution API** para ligar o canal ao backend.
 
-Sou **estudante**, gosto de tecnologia e fiz isto para **aprender na prática** — infraestrutura, integrações, vector store — além do que aparece só na teoria.
+Sou **estudante**, gosto de tecnologia e fiz isso para **aprender na prática** — infraestrutura, integrações, vector store — além do que aparece só na teoria.
 
-Não é apresentação comercial: é código que foi escrito, testado e corrigido várias vezes. Se estás a avaliar o repositório, aqui está **que problema ataca**, **o stack**, **porquê** e **como testar**.
+Não é apresentação comercial: é código que foi escrito, testado e corrigido várias vezes. Se você está avaliando o repositório, aqui está **que problema isso resolve**, **a stack**, **por quê** e **como testar**.
 
 ---
 
-## Que problema isto tenta resolver
+## Que problema isso tenta resolver
 
-Em **atendimento por WhatsApp** o padrão é repetido: picos de mensagens, horários em que ninguém está disponível, **atraso na resposta** e quem está do outro lado desiste. Respostas fixas do tipo “já vamos responder” pouco ajudam; um modelo que **inventa** dados sobre produto ou serviço é perigoso.
+Em **atendimento por WhatsApp** o padrão se repete: picos de mensagens, horários em que ninguém está disponível, **atraso na resposta** e quem está do outro lado desiste. Respostas fixas do tipo “já vamos responder” pouco ajudam; um modelo que **inventa** dados sobre produto ou serviço é perigoso.
 
 O objetivo deste projeto é **automatizar respostas** com base em **material de apoio indexado** (PDF, texto), mantendo **contexto da conversa**. Daí o **RAG**: antes de gerar texto, o sistema **recupera trechos** relevantes e só depois manda o pedido ao modelo da OpenAI.
 
@@ -20,11 +20,11 @@ O objetivo deste projeto é **automatizar respostas** com base em **material de 
 
 1. O cliente manda mensagem no WhatsApp.
 2. A **Evolution API** (instância WhatsApp configurada no painel) dispara um evento e chama o **`POST /webhook`** do serviço Python.
-3. O **FastAPI** recebe o JSON, tira o texto e o identificador do chat.
+3. O **FastAPI** recebe o JSON, extrai o texto e o identificador do chat.
 4. Entra a **chain do LangChain**: histórico no **Redis**, busca semântica no **Chroma** (feita com embeddings da OpenAI), depois o **modelo de chat** gera a resposta.
 5. O mesmo backend chama de novo a Evolution para **enviar o texto** de volta ao número.
 
-O **Postgres** na stack existe porque a **imagem da Evolution** precisa de base de dados para estado e metadados. O **Redis** serve à Evolution e, no bot, guarda o **histórico de mensagens** do LangChain.
+O **Postgres** na stack existe porque a **imagem da Evolution** precisa de banco de dados para estado e metadados. O **Redis** serve à Evolution e, no bot, guarda o **histórico de mensagens** do LangChain.
 
 ---
 
@@ -36,13 +36,13 @@ O **Postgres** na stack existe porque a **imagem da Evolution** precisa de base 
 
 **Uvicorn** — Servidor ASGI no `Dockerfile` / comando do container; uso habitual com FastAPI.
 
-**Docker + Docker Compose** — **Um comando** para subir Evolution API, Postgres, Redis e o serviço do bot na **mesma rede**, com **volumes** para instância WhatsApp, base de dados, ficheiros RAG e pasta do Chroma. Assim o ambiente fica **reproduzível** entre máquinas.
+**Docker + Docker Compose** — **Um comando** para subir Evolution API, Postgres, Redis e o serviço do bot na **mesma rede**, com **volumes** para instância WhatsApp, banco de dados, arquivos RAG e pasta do Chroma. Assim o ambiente fica **reproduzível** entre máquinas.
 
-**Dockerfile do bot** — Copia `requirements.txt`, instala dependências, copia o código, expõe a porta 8000 e arranca o Uvicorn. Simples de proposito.
+**Dockerfile do bot** — Copia `requirements.txt`, instala dependências, copia o código, expõe a porta 8000 e sobe o Uvicorn. Simples de propósito.
 
 **Evolution API (imagem evoapicloud)** — Abstrai a ligação ao protocolo WhatsApp: entra **HTTP** com JSON e sai **HTTP** para enviar mensagem. Por baixo usa Baileys; o foco do projeto é **orquestrar IA, RAG e histórico**, não reimplementar o cliente WhatsApp.
 
-**PostgreSQL 15** — Vem no `docker-compose` porque a Evolution precisa. Ajustei `max_connections` no compose para evitar dor de cabeça quando há muitas ligações.
+**PostgreSQL 15** — Vem no `docker-compose` porque a Evolution precisa. Ajustei `max_connections` no compose para evitar dor de cabeça quando há muitas conexões.
 
 **Redis** — Cache e outras funções internas da Evolution; no bot, **Redis** guarda o histórico via `RedisChatMessageHistory` do LangChain, com `session_id` alinhado ao JID do WhatsApp.
 
@@ -50,13 +50,13 @@ O **Postgres** na stack existe porque a **imagem da Evolution** precisa de base 
 
 **OpenAI** — `ChatOpenAI` para a resposta final e `OpenAIEmbeddings` para transformar texto em vetor e pesquisar no Chroma. Uma API só para os dois papéis simplifica contas e chaves.
 
-**Chroma** — Base vectorial em disco (`persist_directory`), integrada ao LangChain. É **simples de operar** num projeto desta escala, sem serviço vectorial externo desde o primeiro dia. Os dados ficam em `vectorstore_data` (montada no container).
+**Chroma** — Base vetorial em disco (`persist_directory`), integrada ao LangChain. É **simples de operar** num projeto desta escala, sem serviço vetorial externo desde o primeiro dia. Os dados ficam em `vectorstore_data` (montada no container).
 
-**PyPDF + loaders do LangChain** — Para ingerir PDF e TXT da pasta `rag_files`. Os ficheiros processados vão para `rag_files/processed` (e essa pasta está no `.gitignore` para não ir lixo para o Git).
+**PyPDF + loaders do LangChain** — Para ingerir PDF e TXT da pasta `rag_files`. Os arquivos processados vão para `rag_files/processed` (e essa pasta está no `.gitignore` para não ir lixo para o Git).
 
 **Requests** — No `evolution_api.py`, `POST` ao endpoint `sendText` da Evolution com `apikey` no header; fácil de inspecionar em caso de erro.
 
-**python-dotenv** — Todas as chaves e URLs vêm do ficheiro `.env`. Nunca commitar isso.
+**python-dotenv** — Todas as chaves e URLs vêm do arquivo `.env`. Nunca faça commit disso.
 
 ---
 
@@ -73,20 +73,20 @@ O **Postgres** na stack existe porque a **imagem da Evolution** precisa de base 
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
-├── rag_files/          # Coloca aqui PDF/TXT para indexar
+├── rag_files/          # Coloque aqui PDF/TXT para indexar
 └── vectorstore_data/   # Onde o Chroma guarda os vetores (não vai para o Git)
 ```
 
 ---
 
-## O que precisas antes de começar
+## O que você precisa antes de começar
 
 - **Docker** e **Docker Compose** instalados.
 - Conta **OpenAI** com API key.
-- Instância configurada na **Evolution API** (QR code, webhook apontando para o teu bot).
-- Ficheiro **`.env`** na raiz (cria a partir dos nomes no `config.py`; não há exemplo no repo de propósito para não vazar estrutura de secrets).
+- Instância configurada na **Evolution API** (QR code, webhook apontando para o seu bot).
+- Arquivo **`.env`** na raiz (crie a partir dos nomes no `config.py`; não há exemplo no repositório de propósito para não vazar estrutura de secrets).
 
-### Variáveis que o `config.py` espera (nomes para copiares)
+### Variáveis que o `config.py` espera (nomes para copiar)
 
 | Variável | Para quê |
 |----------|----------|
@@ -114,16 +114,16 @@ Na raiz do projeto:
 docker compose up --build
 ```
 
-Serviços expostos por defeito no compose:
+Serviços expostos por padrão no compose:
 
 - Evolution API: `http://localhost:8080`
 - Bot (FastAPI): `http://localhost:8000`
 - Postgres: `localhost:5432`
 - Redis: `localhost:6379`
 
-**Nota:** a senha do Postgres no compose está como `postgres` só para desenvolvimento. Em ambiente real muda isso já.
+**Nota:** a senha do Postgres no compose está como `postgres` só para desenvolvimento. Em ambiente real, mude isso já.
 
-### Correr só o bot no PC (sem Docker)
+### Rodar só o bot no PC (sem Docker)
 
 ```bash
 python -m venv venv
@@ -132,17 +132,17 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Tens de garantir que a Evolution consegue bater no webhook. Se a Evolution estiver noutra máquina, precisas de URL pública (ngrok, túnel, etc.) ou da mesma rede Docker.
+Você precisa garantir que a Evolution consegue bater no webhook. Se a Evolution estiver em outra máquina, precisa de URL pública (ngrok, túnel, etc.) ou da mesma rede Docker.
 
 ---
 
-## Como testar (para quem quer verificar na pele)
+## Como testar (para quem quer verificar na prática)
 
 **1. Ver se o bot está vivo**  
-Abre `http://localhost:8000/docs` — o FastAPI mostra o Swagger. O endpoint importante é `POST /webhook`.
+Abra `http://localhost:8000/docs` — o FastAPI mostra o Swagger. O endpoint importante é `POST /webhook`.
 
 **2. Teste “de mentira” com JSON parecido com a Evolution**  
-Podes usar o Swagger ou o curl abaixo (ajusta o número e o texto). Isto simula o corpo que a Evolution manda em `messages.upsert`:
+Você pode usar o Swagger ou o curl abaixo (ajuste o número e o texto). Isso simula o corpo que a Evolution manda em `messages.upsert`:
 
 PowerShell (Windows), numa linha só:
 
@@ -152,25 +152,25 @@ curl -X POST http://localhost:8000/webhook -H "Content-Type: application/json" -
 
 No Linux/macOS o escape das aspas pode variar; o mais simples é usar o **Swagger** em `/docs` e colar o JSON lá.
 
-Se a chain, Redis, Chroma e OpenAI estiverem bem configurados, deves ver atividade no terminal e (se a Evolution estiver ligada e o número existir) uma mensagem a chegar ao WhatsApp. Se algo falhar, o sítio certo para olhar é o log do container `bot`.
+Se a chain, Redis, Chroma e OpenAI estiverem bem configurados, você deve ver atividade no terminal e (se a Evolution estiver ligada e o número existir) uma mensagem chegando ao WhatsApp. Se algo falhar, o lugar certo para olhar é o log do container `bot`.
 
 **3. Teste real**  
-Com a instância WhatsApp conectada na Evolution e o webhook configurado para `http://bot:8000/webhook` (rede interna do Compose) ou o URL público equivalente, manda uma mensagem do teu telefone. O comportamento esperado é resposta automática com base nos documentos indexados.
+Com a instância WhatsApp conectada na Evolution e o webhook configurado para `http://bot:8000/webhook` (rede interna do Compose) ou o URL público equivalente, mande uma mensagem do seu telefone. O comportamento esperado é resposta automática com base nos documentos indexados.
 
-**4. Logs**  
+**4. Logs**
 
 ```bash
 docker compose logs -f bot
 ```
 
 **5. Alimentar o RAG**  
-Mete PDF ou TXT em `rag_files/` (não dentro de `processed`). Reinicia o bot ou força o código a recarregar documentos conforme a tua lógica no `vectorstore.py`. A primeira vez demora mais (embeddings + escrita no Chroma).
+Coloque PDF ou TXT em `rag_files/` (não dentro de `processed`). Reinicie o bot ou force o código a recarregar documentos conforme a sua lógica no `vectorstore.py`. A primeira vez demora mais (embeddings + escrita no Chroma).
 
 ---
 
 ## Limitações conhecidas
 
-O `app.py` actual só trata bem mensagens com campo `conversation`. Áudio, imagem ou texto só em `extendedTextMessage` ainda não estão cobertos.
+O `app.py` atual só trata bem mensagens com campo `conversation`. Áudio, imagem ou texto só em `extendedTextMessage` ainda não estão cobertos.
 
 Não há filtro `fromMe`: em certas configurações de webhook pode haver eco; convém validar no painel da Evolution.
 
@@ -178,14 +178,14 @@ Não há filtro `fromMe`: em certas configurações de webhook pode haver eco; c
 
 ## Segurança
 
-- `.env` fora do Git.  
-- Rotação de chaves se alguma vez tiver ido parar ao histórico.  
-- Não expor Postgres e painéis da API à internet sem firewall ou VPN.
+- `.env` fora do Git.
+- Rotação de chaves se alguma vez tiver ido parar ao histórico.
+- Não exponha Postgres e painéis da API à internet sem firewall ou VPN.
 
 ---
 
 ## Palavra final
 
-Projeto focado em **atendimento automatizado** com **RAG** e stack reproduzível em Docker. Foi também exercício de **aprendizagem** (compose, memória de conversa, integração WhatsApp). Dúvidas técnicas sobre o repositório, estou disponível para conversar.
+Projeto focado em **atendimento automatizado** com **RAG** e stack reproduzível em Docker. Foi também exercício de **aprendizado** (compose, memória de conversa, integração WhatsApp). Dúvidas técnicas sobre o repositório, estou disponível para conversar.
 
 — Herbert
