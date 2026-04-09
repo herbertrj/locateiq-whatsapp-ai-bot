@@ -18,3 +18,21 @@ EVOLUTION_INSTANCE_NAME = os.getenv('EVOLUTION_INSTANCE_NAME')
 EVOLUTION_AUTHENTICATION_API_KEY = os.getenv('AUTHENTICATION_API_KEY')
 
 REDIS_URL = os.getenv('CACHE_REDIS_URI')
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == '':
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+BUFFER_KEY_SUFIX = os.getenv('BUFFER_KEY_SUFIX', ':msgbuf')
+DEBOUNCE_SECONDS = _int_env(
+    'DEBOUNCE_SECONDS',
+    _int_env('DEBALANCE_SECONDS', 5),
+)
+BUFFER_TTL = _int_env('BUFFER_TTL', 600)
