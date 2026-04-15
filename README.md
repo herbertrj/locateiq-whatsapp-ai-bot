@@ -1,131 +1,104 @@
 # Chatbot de atendimento no WhatsApp com RAG
 
-Repositório de um **projeto de automação de atendimento**: responder gente no **WhatsApp** com **IA**, mas puxando resposta de **documentos** (PDF, texto) pra não ficar no vácuo inventando coisa. Stack: **RAG**, **Docker**, **LangChain**, **Evolution API**.
+Bot que responde no **WhatsApp** usando **IA**, mas com respostas baseadas em **documentos** (PDF, texto) para não inventar informação. Usei **RAG**, **Docker**, **LangChain** e a **Evolution API**.
 
-Sou **estudante**, curto tecnologia e montei isso pra **aprender na prática** — infra, integração, vector store — além da parte só de teoria.
-
-Não é pitch comercial: é código que eu fui quebrando e consertando. Se você caiu aqui de paraquedas: abaixo tem **qual é o problema**, **o que usei**, **por que** e **como rodar**.
+Sou estudante; montei o projeto para estudar na prática integração, Docker e vector store.
 
 ---
 
-## Qual problema isso tenta resolver
+## O que o projeto faz
 
-Em **atendimento por WhatsApp** o padrão é sempre o mesmo: pico de mensagem, horário ruim, **demora pra responder** e o cliente some. Mensagem automática genérica quase não ajuda; modelo que **inventa** detalhe de produto/serviço é furada.
+Em atendimento por WhatsApp costuma faltar gente no horário de pico, a resposta atrasa e o cliente desiste. Resposta genérica não resolve; modelo que inventa detalhe de produto ou serviço é arriscado.
 
-A ideia é **responder automático** com base em **material indexado** (PDF, texto) e ainda **lembrar o contexto** da conversa. Por isso **RAG**: antes de gerar, o sistema **busca trecho** relevante e só depois chama a OpenAI.
-
----
-
-## Fluxo (sem jargão demais)
-
-1. Cliente manda mensagem no WhatsApp.
-2. **Evolution API** (instância configurada no painel) dispara evento e bate no **`POST /webhook`** do Python.
-3. **FastAPI** lê o JSON, pega o texto e o id do chat.
-4. Entra a **chain LangChain**: histórico no **Redis**, busca no **Chroma** (embeddings OpenAI), modelo gera a resposta.
-5. O backend chama a Evolution de novo pra **devolver o texto** pro número.
-
-**Postgres** tá no compose porque a **imagem da Evolution** precisa de banco pra estado/metadata. **Redis** a Evolution usa pra cache etc.; no bot, guarda **histórico** do LangChain.
+Aqui a ideia é responder com base em material que você indexa (PDF, texto) e manter um mínimo de contexto da conversa. Por isso o **RAG**: o sistema busca trechos relevantes antes de mandar o pedido para a OpenAI.
 
 ---
 
-## Stack (e por que não outra coisa)
+## Como funciona (passo a passo)
 
-**Python 3.13** — Versão do `Dockerfile`; equilíbrio entre coisa nova e LangChain não ficar no limbo.
+1. Alguém manda mensagem no WhatsApp.
+2. A **Evolution API** chama o **`POST /webhook`** do serviço em Python.
+3. O **FastAPI** lê o JSON e extrai o texto e o identificador do chat.
+4. O **buffer** (`message_buffer.py`) junta mensagens em sequência com debounce no **Redis**; depois disso roda a chain.
+5. A **chain** (LangChain) usa histórico no **Redis**, busca no **Chroma** e gera a resposta.
+6. O backend chama a Evolution de novo para enviar o texto de volta.
 
-**FastAPI** — Webhook leve, async, já nasce com doc OpenAPI.
-
-**Uvicorn** — ASGI no container; par clássico com FastAPI.
-
-**Docker + Compose** — Um `docker compose up` sobe Evolution, Postgres, Redis e o bot na **mesma rede**, com **volume** pra instância, banco, arquivos RAG e pasta do Chroma. Ambiente **repetível** em outra máquina.
-
-**Dockerfile do bot** — Copia `requirements.txt`, instala deps, copia código, porta 8000, sobe Uvicorn. Sem firula.
-
-**Evolution (evoapicloud)** — WhatsApp via HTTP JSON; por baixo Baileys. Aqui o foco é **encaixar IA + RAG + memória**, não reescrever cliente.
-
-**PostgreSQL 15** — Evolution pede; subi `max_connections` no compose pra não sofrer com muita conexão.
-
-**Redis** — Evolution + no bot o histórico `RedisChatMessageHistory` com `session_id` = JID.
-
-**LangChain** (`langchain-core`, `langchain-classic`, `langchain-openai`, etc.) — History-aware retriever + stuff documents + retrieval chain + `RunnableWithMessageHistory`, padrão que aparece em tutorial e projeto real.
-
-**OpenAI** — Chat + embeddings num lugar só; menos chave pra gerenciar.
-
-**Chroma** — Vetor em disco (`persist_directory`), simples pra escopo desse projeto. Dados em `vectorstore_data` (montado no container).
-
-**PyPDF + loaders** — Ingere PDF/TXT de `rag_files/`; o que for processado cai em `rag_files/processed` (`.gitignore` pra não poluir o Git).
-
-**Requests** — `evolution_api.py` faz `POST` no `sendText` com `apikey` no header; debug é olhar status/corpo.
-
-**python-dotenv** — Tudo sensível no `.env`. **Não commitar.**
+O **Postgres** no compose existe porque a imagem da Evolution precisa de banco. O **Redis** serve à Evolution e, no bot, guarda histórico e a fila do buffer.
 
 ---
 
-## Pastas / arquivos
+## O que tem no repositório
 
 ```
-├── app.py              # FastAPI: webhook + chain + WhatsApp
-├── chains.py           # RAG conversacional
-├── message_buffer.py   # Buffer de mensagens (debounce no Redis) — use no webhook se quiser agrupar rajadas
-├── prompts.py          # Prompts de sistema
-├── vectorstore.py      # Docs → chunks → Chroma
-├── memory.py           # Histórico Redis por sessão
-├── evolution_api.py    # Envia texto pela Evolution
-├── config.py           # Lê .env
+├── app.py              # Webhook FastAPI
+├── chains.py           # Chain RAG conversacional
+├── message_buffer.py   # Buffer + debounce no Redis
+├── prompts.py          # Prompts
+├── vectorstore.py      # Documentos → Chroma
+├── memory.py           # Histórico por sessão (Redis)
+├── evolution_api.py    # Chamadas HTTP à Evolution (texto, presença etc.)
+├── config.py           # Variáveis de ambiente
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
-├── rag_files/          # Joga PDF/TXT aqui pra indexar
-└── vectorstore_data/   # Chroma no disco (não vai pro Git)
+├── rag_files/          # PDF/TXT para indexar
+└── vectorstore_data/   # Chroma em disco (não versionar)
 ```
 
 ---
 
-## Antes de rodar
+## Requisitos
 
-- Docker + Docker Compose
+- Docker e Docker Compose
 - Conta OpenAI (API key)
-- Instância na Evolution com webhook apontando pro bot
-- `.env` na raiz (nomes das variáveis estão no `config.py`; não tem `.env.example` de propósito)
-
-### Variáveis que o `config.py` lê
-
-| Variável | Pra quê |
-|----------|---------|
-| `OPENAI_API_KEY` | OpenAI |
-| `OPENAI_MODEL_NAME` | Modelo de chat |
-| `OPENAI_MODEL_TEMPERATURE` | Temperatura |
-| `AI_CONTEXTUALIZE_PROMPT` | Reformula pergunta com histórico |
-| `AI_SYSTEM_PROMPT` | Instruções; o QA precisa de `{context}` |
-| `VECTOR_STORE_PATH` | Pasta Chroma (no Docker uso `/app/vectorstore`) |
-| `RAG_FILES_DIRS` | Docs (no Docker `/app/rag_files`) — o código usa `RAG_FILES_DIR` |
-| `EVOLUTION_API_URL` | Base da API (`http://evolution-api:8080` dentro do compose) |
-| `EVOLUTION_INSTANCE_NAME` | Nome da instância |
-| `AUTHENTICATION_API_KEY` | Header `apikey` |
-| `CACHE_REDIS_URI` | Redis (ex. `redis://redis:6379`) |
-| `BUFFER_KEY_SUFIX` | (opcional) sufixo da chave do buffer; default `:msgbuf` |
-| `DEBOUNCE_SECONDS` | (opcional) espera após última msg; default 3 (aceita typo `DEBALANCE_SECONDS`) |
-| `BUFFER_TTL` | (opcional) TTL da lista no Redis; default 600 |
-
-Doc Evolution: [Evolution API v2](https://doc.evolution-api.com/).
+- Instância na Evolution com webhook apontando para este serviço
+- Arquivo `.env` na raiz (os nomes das variáveis estão no `config.py`; não incluí `.env.example` no repo)
 
 ---
 
-## Subir tudo
+## Variáveis de ambiente (resumo)
+
+| Variável | Uso |
+|----------|-----|
+| `OPENAI_API_KEY` | OpenAI |
+| `OPENAI_MODEL_NAME` | Modelo de chat |
+| `OPENAI_MODEL_TEMPERATURE` | Temperatura |
+| `AI_CONTEXTUALIZE_PROMPT` | Prompt de contextualização com histórico |
+| `AI_SYSTEM_PROMPT` | Instruções do assistente; o QA precisa de `{context}` |
+| `VECTOR_STORE_PATH` | Pasta do Chroma (no Docker costumo usar `/app/vectorstore`) |
+| `RAG_FILES_DIRS` | Pasta dos docs (no Docker `/app/rag_files`); no código vira `RAG_FILES_DIR` |
+| `EVOLUTION_API_URL` | URL base da Evolution (no compose: `http://evolution-api:8080`) |
+| `EVOLUTION_INSTANCE_NAME` | Nome da instância |
+| `AUTHENTICATION_API_KEY` | Header `apikey` |
+| `CACHE_REDIS_URI` | Redis (ex.: `redis://redis:6379`) |
+| `BUFFER_KEY_SUFIX` | Opcional; sufixo da chave do buffer no Redis (padrão `:msgbuf`) |
+| `DEBOUNCE_SECONDS` | Opcional; segundos após a última mensagem antes de processar (padrão 5; aceita `DEBALANCE_SECONDS` se estiver errado no .env) |
+| `BUFFER_TTL` | Opcional; TTL da lista no Redis em segundos (padrão 600) |
+
+Documentação da Evolution: [Evolution API v2](https://doc.evolution-api.com/).
+
+---
+
+## Rodar com Docker
+
+Na raiz:
 
 ```bash
 docker compose up --build
 ```
 
-Portas usuais:
+Portas comuns no compose:
 
 - Evolution: `http://localhost:8080`
 - Bot: `http://localhost:8000`
 - Postgres: `5432`
 - Redis: `6379`
 
-Senha `postgres` no compose é só dev; produção muda isso.
+A senha do Postgres no compose está simples só para desenvolvimento; em produção troque.
 
-### Só o bot na máquina (sem Docker)
+---
+
+## Rodar só o bot (sem Docker)
 
 ```bash
 python -m venv venv
@@ -134,48 +107,38 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-A Evolution precisa conseguir chamar o webhook. Se não for na mesma rede/túnel, vira ngrok ou URL pública.
+A Evolution precisa alcançar o webhook (mesma rede, túnel ou ngrok se estiver fora).
 
 ---
 
 ## Testar
 
-**1.** `http://localhost:8000/docs` — Swagger; o que importa é `POST /webhook`.
+Abra `http://localhost:8000/docs` e use o `POST /webhook`.
 
-**2.** JSON fake parecido com Evolution — Swagger ou PowerShell:
+Exemplo de corpo (PowerShell, uma linha):
 
 ```bash
 curl -X POST http://localhost:8000/webhook -H "Content-Type: application/json" -d "{\"data\":{\"key\":{\"remoteJid\":\"5511999999999@s.whatsapp.net\"},\"message\":{\"conversation\":\"Olá, teste\"}}}"
 ```
 
-No Linux/macOS o escape muda; na dúvida usa o `/docs`.
-
-Se chain + Redis + Chroma + OpenAI tiverem ok, aparece coisa no terminal e (Evolution ligada) mensagem no Zap. Erro → log do container `bot`.
-
-**3.** Teste de verdade: instância conectada, webhook tipo `http://bot:8000/webhook` no compose (ou URL pública).
-
-**4.** Logs: `docker compose logs -f bot`
-
-**5.** RAG: PDF/TXT em `rag_files/` (fora de `processed`), reinicia ou recarrega conforme teu `vectorstore.py`. Primeira vez demora (embedding + Chroma).
+Com o buffer ativo, a resposta só sai depois do tempo de debounce sem nova mensagem para aquele contato. Se algo der errado, olhe `docker compose logs -f bot`.
 
 ---
 
-## Limitações
+## Limitações do código
 
-`app.py` hoje só trata `conversation` direto. Áudio, imagem, `extendedTextMessage` → ainda não.
+O `app.py` trata principalmente mensagens com campo `conversation`. Áudio, imagem e `extendedTextMessage` ainda não entram no fluxo.
 
-Sem filtro `fromMe` em alguns webhooks pode dar eco; vale checar na Evolution.
+Não há filtro `fromMe`; em alguns webhooks pode aparecer eco — vale conferir na Evolution.
 
 ---
 
 ## Segurança
 
-`.env` fora do Git. Rotaciona chave se vazou. Não deixa Postgres/API aberto na internet sem proteção.
+Não commite o `.env`. Troque chaves se vazarem. Não exponha Postgres nem API à internet sem controle de acesso.
 
 ---
 
-## Fechando
+## Autor
 
-Projeto de **atendimento com RAG** e stack que dá pra subir de novo em outro PC. Também foi treino de compose, memória de conversa e WhatsApp. Dúvida sobre o repo, chama.
-
-— Herbert
+Herbert

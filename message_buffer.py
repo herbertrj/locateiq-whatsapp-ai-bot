@@ -4,7 +4,7 @@ import redis.asyncio as redis
 from collections import defaultdict
 
 from config import REDIS_URL, BUFFER_KEY_SUFIX, DEBOUNCE_SECONDS, BUFFER_TTL
-from evolution_api import send_whatsapp_message
+from evolution_api import send_whatsapp_message, start_typing, stop_typing
 from chains import get_conversational_rag_chain
 
 
@@ -42,15 +42,28 @@ async def handle_debounce(chat_id: str):
         full_message = ' '.join(messages).strip()
         if full_message:
             log(f'Enviando mensagem agrupada para {chat_id}: {full_message}')
-            ai_response = conversational_rag_chain.invoke(
-                input={'input': full_message},
-                config={'configurable': {'session_id': chat_id}},
-            )['answer']
+            typing_started = start_typing(chat_id)
+            typing_started_at = asyncio.get_running_loop().time()
+            log(f'start_typing={typing_started} para {chat_id}')
+            try:
+                ai_response = conversational_rag_chain.invoke(
+                    input={'input': full_message},
+                    config={'configurable': {'session_id': chat_id}},
+                )['answer']
 
-            send_whatsapp_message(
-                number=chat_id,
-                text=ai_response,
-            )
+                # Dá tempo mínimo para o indicador aparecer no cliente.
+                elapsed = asyncio.get_running_loop().time() - typing_started_at
+                min_typing_seconds = 4.5
+                if elapsed < min_typing_seconds:
+                    await asyncio.sleep(min_typing_seconds - elapsed)
+
+                send_whatsapp_message(
+                    number=chat_id,
+                    text=ai_response,
+                )
+            finally:
+                stopped = stop_typing(chat_id)
+                log(f'stop_typing={stopped} para {chat_id}')
         await redis_client.delete(buffer_key)
 
     except asyncio.CancelledError:
