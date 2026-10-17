@@ -1,4 +1,4 @@
-# Chatbot de atendimento no WhatsApp com RAG
+[# Chatbot de atendimento no WhatsApp com RAG
 
 Bot que responde no **WhatsApp** usando **IA**, mas com respostas baseadas em **documentos** (PDF, texto) para não inventar informação. Usei **RAG**, **Docker**, **LangChain** e a **Evolution API**.
 
@@ -142,3 +142,4 @@ Não commite o `.env`. Troque chaves se vazarem. Não exponha Postgres nem API �
 ## Autor
 
 Herbert
+](https://github.com/herbertrj/ChatBot_LocateIQ)
